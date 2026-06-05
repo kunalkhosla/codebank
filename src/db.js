@@ -70,8 +70,18 @@ CREATE TABLE IF NOT EXISTS transcripts (
   content    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS games (
+  id         TEXT PRIMARY KEY,
+  kid_id     TEXT NOT NULL,
+  title      TEXT NOT NULL,
+  html       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_snap_kid ON snapshots(kid_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_tx_kid ON transcripts(kid_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_games_kid ON games(kid_id, updated_at);
 `);
 
 // ---- prepared statements ----
@@ -105,7 +115,13 @@ const q = {
   delSess: db.prepare(`DELETE FROM sessions WHERE kid_id=?`),
   delLedger: db.prepare(`DELETE FROM ledger WHERE kid_id=?`),
   delConfig: db.prepare(`DELETE FROM config WHERE kid_id=?`),
+  delGames: db.prepare(`DELETE FROM games WHERE kid_id=?`),
   delKid: db.prepare(`DELETE FROM kids WHERE id=?`),
+  insertGame: db.prepare(`INSERT INTO games (id,kid_id,title,html,created_at,updated_at) VALUES (@id,@kid_id,@title,@html,@created_at,@updated_at)`),
+  updateGame: db.prepare(`UPDATE games SET title=@title, html=@html, updated_at=@updated_at WHERE id=@id`),
+  getGame: db.prepare(`SELECT * FROM games WHERE id=?`),
+  getGameByTitle: db.prepare(`SELECT * FROM games WHERE kid_id=? AND title=?`),
+  listGames: db.prepare(`SELECT id,title,created_at,updated_at FROM games WHERE kid_id=? ORDER BY updated_at DESC`),
 };
 
 // Delete a kid and everything tied to them (no FK cascade — done explicitly,
@@ -114,7 +130,7 @@ const q = {
 const deleteKidTx = db.transaction((id) => {
   const snapIds = q.snapIdsForKid.all(id).map((r) => r.id);
   q.delTx.run(id); q.delSnap.run(id); q.delSess.run(id);
-  q.delLedger.run(id); q.delConfig.run(id); q.delKid.run(id);
+  q.delLedger.run(id); q.delConfig.run(id); q.delGames.run(id); q.delKid.run(id);
   return snapIds;
 });
 
@@ -135,4 +151,9 @@ export const store = {
   insertTx: (id, kid, t, role, content) => q.insertTx.run(id, kid, t, role, content),
   recentTx: (kid, n = 20) => q.recentTx.all(kid, n),
   deleteKid: (id) => deleteKidTx(id),
+  insertGame: (g) => q.insertGame.run(g),
+  updateGame: (g) => q.updateGame.run(g),
+  getGame: (id) => q.getGame.get(id),
+  getGameByTitle: (kid, title) => q.getGameByTitle.get(kid, title),
+  listGames: (kid) => q.listGames.all(kid),
 };

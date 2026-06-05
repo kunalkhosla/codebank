@@ -12,6 +12,20 @@ import { chat } from './chat.js';
 
 const SNAP_DIR = path.join(config.dataDir, 'snapshots');
 
+// Pull the runnable game out of a Builder Buddy reply + give it a friendly title.
+function extractHtml(text) {
+  const m = (text || '').match(/```html\s*([\s\S]*?)```/i);
+  return m ? m[1].trim() : null;
+}
+function deriveTitle(html, fallbackMsg) {
+  const generic = /^(document|game|untitled|index|html)$/i;
+  let t = (html.match(/<title>([^<]+)<\/title>/i) || [])[1];
+  if (!t || generic.test(t.trim())) t = (html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || [])[1];
+  if (!t) t = (fallbackMsg || '').replace(/[`*#]/g, '').trim().slice(0, 40);
+  t = (t || 'My Game').trim();
+  return t.length > 60 ? t.slice(0, 60) : t;
+}
+
 // ---- seed kids from env (no kid data in the repo) ----
 // First-boot bootstrap ONLY: once any kid exists, the dashboard is the source of
 // truth (so deletes/renames stick and CODEBANK_KIDS doesn't re-create them).
@@ -118,7 +132,7 @@ app.post('/api/snapshot', async (c) => {
 });
 
 app.post('/api/chat', async (c) => {
-  const { kidId, message } = await c.req.json().catch(() => ({}));
+  const { kidId, message, gameId } = await c.req.json().catch(() => ({}));
   if (!kidId || !store.getKid(kidId)) return c.json({ error: 'unknown kid' }, 400);
   if (!message || !String(message).trim()) return c.json({ error: 'empty message' }, 400);
 
@@ -131,12 +145,48 @@ app.post('/api/chat', async (c) => {
     st = r.status;
   }
 
+  // If iterating on a saved game, load its current code for context.
+  let currentGameHtml = null;
+  if (gameId) {
+    const g = store.getGame(gameId);
+    if (g && g.kid_id === kidId) currentGameHtml = g.html;
+  }
+
   try {
-    const reply = await chat(kidId, String(message).slice(0, 4000));
-    return c.json({ locked: false, reply, status: status(kidId) });
+    const reply = await chat(kidId, String(message).slice(0, 4000), currentGameHtml);
+
+    // Auto-save any game in the reply to the kid's library.
+    let savedGameId = null, savedTitle = null;
+    const html = extractHtml(reply);
+    if (html) {
+      const t = Date.now();
+      const title = deriveTitle(html, message);
+      const target = gameId && store.getGame(gameId)?.kid_id === kidId
+        ? store.getGame(gameId)
+        : store.getGameByTitle(kidId, title);
+      if (target) { store.updateGame({ id: target.id, title, html, updated_at: t }); savedGameId = target.id; }
+      else { savedGameId = randomUUID(); store.insertGame({ id: savedGameId, kid_id: kidId, title, html, created_at: t, updated_at: t }); }
+      savedTitle = title;
+    }
+
+    return c.json({ locked: false, reply, gameId: savedGameId, gameTitle: savedTitle, status: status(kidId) });
   } catch (e) {
     return c.json({ error: 'chat failed: ' + String(e.message || e).slice(0, 200) }, 500);
   }
+});
+
+// ---- games library (kid-facing) ----
+app.get('/api/games', (c) => {
+  const kid = c.req.query('kid');
+  if (!kid || !store.getKid(kid)) return c.json({ error: 'unknown kid' }, 400);
+  return c.json(store.listGames(kid));
+});
+
+app.get('/api/game/:id', (c) => {
+  const kid = c.req.query('kid');
+  const g = store.getGame(c.req.param('id'));
+  if (!g || (kid && g.kid_id !== kid)) return c.notFound();
+  return c.json({ id: g.id, title: g.title, html: g.html, updated_at: g.updated_at });
 });
 
 // ---------------- parent / admin API ----------------
@@ -155,6 +205,7 @@ admin.get('/api/state', (c) => {
     status: status(k.id),
     snapshots: store.recentSnapshots(k.id, 15),
     transcript: store.recentTx(k.id, 12).reverse(),
+    games: store.listGames(k.id),
   }));
   return c.json({ kids, models: { chat: config.chatModel, judge: config.judgeModel } });
 });

@@ -28,7 +28,7 @@ You help them build games and fun programs. When you write a full game, return i
 const now = () => Date.now();
 const id = () => `${now().toString(36)}${Math.floor(performance.now()).toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
-export async function chat(kidId, userText) {
+export async function chat(kidId, userText, currentGameHtml = null) {
   const kid = store.getKid(kidId);
   if (!kid) throw new Error('unknown kid');
   const cfg = kidConfig(kidId);
@@ -37,6 +37,12 @@ export async function chat(kidId, userText) {
   // Load recent history (oldest first), append the new turn.
   const history = store.recentTx(kidId, 16).reverse();
   const msgs = history.map((t) => ({ role: t.role, content: t.content }));
+  // If the kid is iterating on a saved game ("Keep building"), give the model
+  // the current code so it edits that game instead of starting over.
+  if (currentGameHtml) {
+    msgs.push({ role: 'user', content: `Here is the game we are currently building. Modify THIS code as I ask, and always return the full updated game in one \`\`\`html block:\n\n\`\`\`html\n${currentGameHtml.slice(0, 60000)}\n\`\`\`` });
+    msgs.push({ role: 'assistant', content: 'Got it — I have our current game. What should we change?' });
+  }
   msgs.push({ role: 'user', content: userText });
 
   store.insertTx(id(), kidId, now(), 'user', userText);

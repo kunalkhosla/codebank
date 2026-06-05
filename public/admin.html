@@ -118,6 +118,9 @@ function kidCard(k){
     <h3>Coding receipts (what the AI judged)</h3>
     <div class="snaps">${k.snapshots.length?k.snapshots.map(s=>snap(s)).join(''):'<span class="muted">No snapshots yet. They appear once the browser extension is running on code.org/Scratch.</span>'}</div>
 
+    <h3>Games built (${k.games.length})</h3>
+    ${k.games.length?('<div style="display:flex;flex-wrap:wrap;gap:6px">'+k.games.map(g=>`<span style="background:#ede9fe;color:#5b21b6;border-radius:999px;padding:4px 12px;font-size:13px">🎮 ${esc(g.title)}</span>`).join('')+'</div>'):'<span class="muted">None yet — games appear here once Builder Buddy builds them.</span>'}
+
     <h3>Recent chat</h3>
     ${k.transcript.length?k.transcript.map(t=>`<div class="tx ${t.role}"><b>${t.role==='user'?k.name:'Buddy'}:</b> ${esc(t.content).slice(0,400)}</div>`).join(''):'<span class="muted">No chats yet.</span>'}
   `;

@@ -92,6 +92,24 @@
 
   /* confetti */
   .conf{position:fixed;top:-10px;width:12px;height:12px;z-index:30;pointer-events:none;border-radius:3px}
+
+  /* my games gallery */
+  .gamesbtn{background:rgba(255,255,255,.9);border:none;border-radius:999px;padding:8px 14px;font-family:inherit;font-size:16px;font-weight:600;color:#6d28d9;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.12)}
+  .gamesbtn:active{transform:translateY(2px);box-shadow:0 2px 0 rgba(0,0,0,.12)}
+  #games{position:absolute;inset:0;background:linear-gradient(135deg,#7c3aed,#2563eb);z-index:6;display:flex;flex-direction:column;color:#fff}
+  #games .gh{display:flex;align-items:center;gap:10px;padding:14px 16px}
+  #games .gh h2{margin:0;font-size:26px}
+  #games .gh button{margin-left:auto;background:#fff;color:#4c1d95;border:none;border-radius:14px;padding:10px 18px;font-family:inherit;font-size:17px;font-weight:600;cursor:pointer}
+  #gamesGrid{flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;padding:0 16px 18px;align-content:start}
+  .gcard{background:#fff;color:var(--ink);border-radius:18px;padding:14px;box-shadow:0 6px 0 rgba(0,0,0,.18);display:flex;flex-direction:column;gap:8px}
+  .gcard .ic{font-size:40px;text-align:center}
+  .gcard .gt{font-weight:600;font-size:15px;line-height:1.2;min-height:36px}
+  .gcard .ga{display:flex;gap:6px}
+  .gcard button{flex:1;border:none;border-radius:12px;padding:9px 4px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
+  .gcard .play{background:var(--green);color:#fff}
+  .gcard .edit{background:#ede9fe;color:#5b21b6}
+  #games .empty{grid-column:1/-1;text-align:center;font-size:20px;opacity:.95;padding:40px 20px}
+  #modal .topm .btns{display:flex;gap:8px}
 </style>
 </head>
 <body>
@@ -107,6 +125,7 @@
     <header>
       <div class="me"><span class="av" id="meAv">🦊</span><span class="nm" id="meNm">Coder</span></div>
       <div class="chip" id="chip">…</div>
+      <button class="gamesbtn" id="gamesBtn">🎮 My Games</button>
       <button class="switch" id="switch">switch</button>
     </header>
     <div class="progwrap">
@@ -132,16 +151,24 @@
         <a href="https://scratch.mit.edu/projects/editor/" target="_blank" rel="noopener">Open Scratch →</a>
       </div>
     </section>
+
+    <!-- my games gallery -->
+    <section id="games" class="hidden">
+      <div class="gh"><h2>🎮 My Games</h2><button id="closeGames">Back to chat</button></div>
+      <div id="gamesGrid"></div>
+    </section>
   </div>
 
   <div id="modal" class="hidden">
-    <div class="topm"><span>🎮 Your game!</span><button id="closeModal">Close ✕</button></div>
-    <iframe id="frame" sandbox="allow-scripts allow-pointer-lock"></iframe>
+    <div class="topm"><span id="modalTitle">🎮 Your game!</span>
+      <div class="btns"><button id="fsBtn">⛶ Fullscreen</button><button id="closeModal">Close ✕</button></div>
+    </div>
+    <iframe id="frame" sandbox="allow-scripts allow-pointer-lock" allow="fullscreen"></iframe>
   </div>
 
 <script>
 const $ = (s)=>document.querySelector(s);
-let kid=null, statusTimer=null, lastUnlocked=null;
+let kid=null, statusTimer=null, lastUnlocked=null, currentGameId=null;
 
 async function api(p,opts){const r=await fetch(p,opts);return r.json();}
 function fmt(sec){sec=Math.max(0,Math.round(sec));const m=Math.floor(sec/60),s=sec%60;return m+':'+String(s).padStart(2,'0');}
@@ -162,7 +189,7 @@ function pick(k){
   kid=k;localStorage.setItem('cb_kid',k.id);
   $('#picker').classList.add('hidden');$('#app').classList.remove('hidden');
   $('#meAv').textContent=k.avatar||'🦊';$('#meNm').textContent=k.name;
-  $('#log').innerHTML='';
+  $('#log').innerHTML='';currentGameId=null;
   addBuddy(`Hi ${k.name}! I'm Builder Buddy 🤖 Once you've been building in code.org or Scratch, we can make awesome games together. What do you want to build?`);
   refresh();clearInterval(statusTimer);statusTimer=setInterval(refresh,15000);
 }
@@ -204,8 +231,39 @@ function addMsg(who,text){
   log.appendChild(d);log.scrollTop=log.scrollHeight;return d;
 }
 function extractHtml(t){const m=t.match(/```html\s*([\s\S]*?)```/i);return m?m[1].trim():null;}
-function runGame(html){const f=$('#frame');f.srcdoc=html;$('#modal').classList.remove('hidden');}
+function runGame(html,title){const f=$('#frame');f.srcdoc=html;$('#modalTitle').textContent=title?('🎮 '+title):'🎮 Your game!';$('#modal').classList.remove('hidden');}
 $('#closeModal').onclick=()=>{$('#modal').classList.add('hidden');$('#frame').srcdoc='';};
+$('#fsBtn').onclick=()=>{const f=$('#frame');(f.requestFullscreen||f.webkitRequestFullscreen||(()=>{})).call(f);};
+
+// ---- My Games gallery ----
+const GAME_ICONS=['🎮','🕹️','👾','🚀','🐱','🦖','⭐','🏎️','🎯','🧩','🐉','🪐'];
+$('#gamesBtn').onclick=openGames;
+$('#closeGames').onclick=()=>$('#games').classList.add('hidden');
+async function openGames(){
+  if(!kid)return;
+  $('#games').classList.remove('hidden');
+  const grid=$('#gamesGrid');grid.innerHTML='<div class="empty">Loading…</div>';
+  let list=[];try{list=await api('/api/games?kid='+encodeURIComponent(kid.id));}catch{}
+  if(!list.length){grid.innerHTML='<div class="empty">No games yet! 🚧<br>Ask Builder Buddy to build one, then it shows up here.</div>';return;}
+  grid.innerHTML='';
+  list.forEach((g,i)=>{
+    const d=document.createElement('div');d.className='gcard';
+    d.innerHTML=`<div class="ic">${GAME_ICONS[i%GAME_ICONS.length]}</div><div class="gt">${esc(g.title)}</div>
+      <div class="ga"><button class="play">▶ Play</button><button class="edit">✏️ Build</button></div>`;
+    d.querySelector('.play').onclick=()=>playGame(g.id,g.title);
+    d.querySelector('.edit').onclick=()=>keepBuilding(g.id,g.title);
+    grid.appendChild(d);
+  });
+}
+async function playGame(id,title){
+  try{const g=await api('/api/game/'+id+'?kid='+encodeURIComponent(kid.id));runGame(g.html,g.title||title);}catch{addBuddy('Could not load that game.');}
+}
+function keepBuilding(id,title){
+  currentGameId=id;$('#games').classList.add('hidden');
+  addBuddy(`Let's keep building "${title}"! 🛠️ Tell me what to add or change.`);
+  $('#text').focus();
+}
+function esc(t){return (t||'').replace(/[<>&]/g,x=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[x]));}
 
 async function send(){
   const t=$('#text').value.trim();if(!t||!kid)return;
@@ -213,7 +271,7 @@ async function send(){
   const typing=document.createElement('div');typing.className='typing';typing.innerHTML='<span></span><span></span><span></span>';
   $('#log').appendChild(typing);$('#log').scrollTop=$('#log').scrollHeight;
   try{
-    const r=await api('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kidId:kid.id,message:t})});
+    const r=await api('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kidId:kid.id,message:t,gameId:currentGameId})});
     typing.remove();
     if(r.locked){
       const need=Math.ceil((r.status?.needSec||0)/60);
@@ -221,7 +279,10 @@ async function send(){
       else addBuddy(`Almost there! Build for about ${need} more minute${need===1?'':'s'} in code.org or Scratch, then I'll be ready. 💪`);
       refresh();
     }else if(r.error){addBuddy('Oops, something went wrong. Try again? ('+r.error+')');}
-    else{addBuddy(r.reply);}
+    else{
+      addBuddy(r.reply);
+      if(r.gameId){currentGameId=r.gameId;if(r.gameTitle){const n=document.createElement('div');n.className='msg buddy';n.style.background='#dcfce7';n.textContent=`✅ Saved "${r.gameTitle}" to 🎮 My Games!`;$('#log').appendChild(n);$('#log').scrollTop=$('#log').scrollHeight;}}
+    }
   }catch(e){typing.remove();addBuddy('Hmm, I could not reach the server. Try again?');}
   $('#send').disabled=false;$('#text').focus();refresh();
 }
