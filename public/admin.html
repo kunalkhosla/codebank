@@ -110,6 +110,7 @@ function kidCard(k){
     </div>
     <div class="row">
       <button class="sm" data-save="${k.id}">Save settings</button>
+      <button class="sm" data-unlock="${k.id}" style="background:#059669">🔓 Unlock now</button>
       <button class="ghost sm" data-grant="${k.id}">+15 free min</button>
       <button class="ghost sm" data-del="${k.id}" style="color:#dc2626;border-color:#dc2626;margin-left:auto">Delete child</button>
     </div>
@@ -122,6 +123,7 @@ function kidCard(k){
   `;
   c.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>saveCfg(k.id,c));
   c.querySelectorAll('[data-grant]').forEach(b=>b.onclick=()=>grant(k.id));
+  c.querySelectorAll('[data-unlock]').forEach(b=>b.onclick=()=>unlock(k.id,k.name,cfg.reward_window_min));
   c.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delKid(k.id,k.name));
   return c;
 }
@@ -142,6 +144,13 @@ async function saveCfg(kidId,card){
 async function grant(kidId){
   await fetch('/admin/api/grant',{method:'POST',headers:H(),body:JSON.stringify({kidId,minutes:15})});
   toast('+15 min granted');load();
+}
+async function unlock(kidId,name,defMin){
+  const v=prompt(`Unlock Builder Buddy for ${name} now — how many minutes?`, defMin||30);
+  if(v===null)return;
+  const minutes=Number(v); if(!minutes||minutes<=0)return;
+  const r=await fetch('/admin/api/unlock',{method:'POST',headers:H(),body:JSON.stringify({kidId,minutes})});
+  toast(r.ok?`Unlocked ${name} for ${minutes} min`:'Unlock failed');load();
 }
 async function delKid(kidId,name){
   if(!confirm(`Delete ${name} and ALL their data (progress, snapshots, chats)? This cannot be undone.`))return;

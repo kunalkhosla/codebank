@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
 import { store } from './db.js';
-import { status, openWindow, addEarned, grantEarned, kidConfig } from './gate.js';
+import { status, openWindow, addEarned, grantEarned, forceUnlock, kidConfig } from './gate.js';
 import { judgeProgress } from './judge.js';
 import { chat } from './chat.js';
 
@@ -191,6 +191,13 @@ admin.post('/api/grant', async (c) => {
   if (!b.kidId || !store.getKid(b.kidId)) return c.json({ error: 'unknown kid' }, 400);
   grantEarned(b.kidId, Number(b.minutes || 0) * 60);
   return c.json({ ok: true, status: status(b.kidId) });
+});
+
+admin.post('/api/unlock', async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  if (!b.kidId || !store.getKid(b.kidId)) return c.json({ error: 'unknown kid' }, 400);
+  const st = forceUnlock(b.kidId, Number(b.minutes) || 0);
+  return c.json({ ok: true, status: st });
 });
 
 admin.post('/api/kid/delete', async (c) => {

@@ -96,3 +96,16 @@ export function openWindow(kidId, now = Date.now()) {
 export function grantEarned(kidId, sec) {
   return addEarned(kidId, sec);
 }
+
+// Manual parent override: open (or extend) a reward window right now without
+// requiring earned time. Bypasses the earn threshold and the daily cap. Counts
+// the granted minutes against today's spent for visibility.
+export function forceUnlock(kidId, minutes, now = Date.now()) {
+  const c = kidConfig(kidId);
+  const l = ledgerToday(kidId);
+  const mins = minutes && minutes > 0 ? minutes : c.reward_window_min;
+  l.window_open_until = Math.max(l.window_open_until, now) + mins * 60 * 1000;
+  l.spent_sec += mins * 60;
+  store.upsertLedger(l);
+  return status(kidId, now);
+}
