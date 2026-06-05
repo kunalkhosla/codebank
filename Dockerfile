@@ -19,4 +19,9 @@ ENV GIT_SHA=$GIT_SHA
 ENV PORT=8080
 EXPOSE 8080
 
+# Node-based healthcheck (the slim image has no wget/curl). Traefik's Docker
+# provider ignores unhealthy containers, so this must actually pass.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "require('http').get('http://127.0.0.1:8080/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+
 CMD ["node", "src/server.js"]
