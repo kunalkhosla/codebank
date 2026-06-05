@@ -13,8 +13,11 @@ import { chat } from './chat.js';
 const SNAP_DIR = path.join(config.dataDir, 'snapshots');
 
 // ---- seed kids from env (no kid data in the repo) ----
+// First-boot bootstrap ONLY: once any kid exists, the dashboard is the source of
+// truth (so deletes/renames stick and CODEBANK_KIDS doesn't re-create them).
 function seedKids() {
   const existing = store.listKids();
+  if (existing.length) return;
   let seed = [];
   if (config.kidsSeed) {
     try { seed = JSON.parse(config.kidsSeed); } catch { console.error('CODEBANK_KIDS is not valid JSON'); }
@@ -188,6 +191,17 @@ admin.post('/api/grant', async (c) => {
   if (!b.kidId || !store.getKid(b.kidId)) return c.json({ error: 'unknown kid' }, 400);
   grantEarned(b.kidId, Number(b.minutes || 0) * 60);
   return c.json({ ok: true, status: status(b.kidId) });
+});
+
+admin.post('/api/kid/delete', async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  if (!b.kidId || !store.getKid(b.kidId)) return c.json({ error: 'unknown kid' }, 400);
+  const snapIds = store.deleteKid(b.kidId);
+  for (const id of snapIds) {
+    const p = path.join(SNAP_DIR, `${id}.png`);
+    if (fs.existsSync(p)) { try { fs.unlinkSync(p); } catch {} }
+  }
+  return c.json({ ok: true, deleted: b.kidId });
 });
 
 admin.get('/api/snapshot/:id/image', (c) => {

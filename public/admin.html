@@ -111,6 +111,7 @@ function kidCard(k){
     <div class="row">
       <button class="sm" data-save="${k.id}">Save settings</button>
       <button class="ghost sm" data-grant="${k.id}">+15 free min</button>
+      <button class="ghost sm" data-del="${k.id}" style="color:#dc2626;border-color:#dc2626;margin-left:auto">Delete child</button>
     </div>
 
     <h3>Coding receipts (what the AI judged)</h3>
@@ -121,6 +122,7 @@ function kidCard(k){
   `;
   c.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>saveCfg(k.id,c));
   c.querySelectorAll('[data-grant]').forEach(b=>b.onclick=()=>grant(k.id));
+  c.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delKid(k.id,k.name));
   return c;
 }
 function knob(label,name,val,step){return `<div class="knob"><label>${label}</label><input data-k="${name}" type="number" step="${step||'1'}" value="${val}"></div>`;}
@@ -140,6 +142,11 @@ async function saveCfg(kidId,card){
 async function grant(kidId){
   await fetch('/admin/api/grant',{method:'POST',headers:H(),body:JSON.stringify({kidId,minutes:15})});
   toast('+15 min granted');load();
+}
+async function delKid(kidId,name){
+  if(!confirm(`Delete ${name} and ALL their data (progress, snapshots, chats)? This cannot be undone.`))return;
+  const r=await fetch('/admin/api/kid/delete',{method:'POST',headers:H(),body:JSON.stringify({kidId})});
+  toast(r.ok?`Deleted ${name}`:'Delete failed');load();
 }
 $('#addKid').onclick=async()=>{
   const name=prompt('Child name:');if(!name)return;

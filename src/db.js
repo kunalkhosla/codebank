@@ -99,7 +99,24 @@ const q = {
   recentSnapshots: db.prepare(`SELECT id,kid_id,created_at,platform,has_image,score,reason,suspected_idle,accrued_sec FROM snapshots WHERE kid_id=? ORDER BY created_at DESC LIMIT ?`),
   insertTx: db.prepare(`INSERT INTO transcripts (id,kid_id,created_at,role,content) VALUES (?,?,?,?,?)`),
   recentTx: db.prepare(`SELECT * FROM transcripts WHERE kid_id=? ORDER BY created_at DESC LIMIT ?`),
+  snapIdsForKid: db.prepare(`SELECT id FROM snapshots WHERE kid_id=?`),
+  delTx: db.prepare(`DELETE FROM transcripts WHERE kid_id=?`),
+  delSnap: db.prepare(`DELETE FROM snapshots WHERE kid_id=?`),
+  delSess: db.prepare(`DELETE FROM sessions WHERE kid_id=?`),
+  delLedger: db.prepare(`DELETE FROM ledger WHERE kid_id=?`),
+  delConfig: db.prepare(`DELETE FROM config WHERE kid_id=?`),
+  delKid: db.prepare(`DELETE FROM kids WHERE id=?`),
 };
+
+// Delete a kid and everything tied to them (no FK cascade — done explicitly,
+// in one transaction). Returns the snapshot ids so the caller can remove the
+// image files from disk.
+const deleteKidTx = db.transaction((id) => {
+  const snapIds = q.snapIdsForKid.all(id).map((r) => r.id);
+  q.delTx.run(id); q.delSnap.run(id); q.delSess.run(id);
+  q.delLedger.run(id); q.delConfig.run(id); q.delKid.run(id);
+  return snapIds;
+});
 
 export const store = {
   upsertKid: (k) => q.insertKid.run(k),
@@ -117,4 +134,5 @@ export const store = {
   recentSnapshots: (kid, n = 20) => q.recentSnapshots.all(kid, n),
   insertTx: (id, kid, t, role, content) => q.insertTx.run(id, kid, t, role, content),
   recentTx: (kid, n = 20) => q.recentTx.all(kid, n),
+  deleteKid: (id) => deleteKidTx(id),
 };
