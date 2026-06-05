@@ -163,7 +163,7 @@
     <div class="topm"><span id="modalTitle">🎮 Your game!</span>
       <div class="btns"><button id="fsBtn">⛶ Fullscreen</button><button id="closeModal">Close ✕</button></div>
     </div>
-    <iframe id="frame" sandbox="allow-scripts allow-pointer-lock" allow="fullscreen"></iframe>
+    <iframe id="frame" sandbox="allow-scripts allow-same-origin allow-pointer-lock" allow="fullscreen"></iframe>
   </div>
 
 <script>
@@ -221,18 +221,26 @@ async function refresh(){
 function showLocked(title,msg){$('#lockTitle').textContent=title;$('#lockMsg').textContent=msg;$('#locked').classList.remove('hidden');}
 
 // ---- chat ----
-function addBuddy(text){return addMsg('buddy',text);}
+function addBuddy(text,opts){return addMsg('buddy',text,opts);}
 function addMe(text){return addMsg('me',text);}
-function addMsg(who,text){
+function addMsg(who,text,opts){
+  opts=opts||{};
   const log=$('#log');const d=document.createElement('div');d.className='msg '+who;
-  const game=extractHtml(text);
-  d.textContent=game?text.replace(/```html[\s\S]*?```/,'').trim()||"Here's your game! 🎮":text;
-  if(game){const btn=document.createElement('button');btn.className='runbtn';btn.textContent='▶ Run my game!';btn.onclick=()=>runGame(game);d.appendChild(document.createElement('br'));d.appendChild(btn);}
+  const shown=(text||'').replace(/```html[\s\S]*?```/i,'').trim();
+  d.textContent=shown||(opts.gameId?"Here's your game! 🎮":text);
+  if(opts.gameId){const btn=document.createElement('button');btn.className='runbtn';btn.textContent='▶ Play '+(opts.title||'my game')+'!';btn.onclick=()=>playGame(opts.gameId,opts.title);d.appendChild(document.createElement('br'));d.appendChild(btn);}
   log.appendChild(d);log.scrollTop=log.scrollHeight;return d;
 }
-function extractHtml(t){const m=t.match(/```html\s*([\s\S]*?)```/i);return m?m[1].trim():null;}
-function runGame(html,title){const f=$('#frame');f.srcdoc=html;$('#modalTitle').textContent=title?('🎮 '+title):'🎮 Your game!';$('#modal').classList.remove('hidden');}
-$('#closeModal').onclick=()=>{$('#modal').classList.add('hidden');$('#frame').srcdoc='';};
+let PLAY='';
+async function loadMeta(){try{const m=await api('/api/meta');PLAY=m.playOrigin||'';}catch{}}
+// Games run on the isolated play origin (their own safe localStorage), framed
+// here so they can't reach the app origin's storage / admin password.
+function playGame(id,title){
+  const f=$('#frame');f.removeAttribute('srcdoc');f.src=(PLAY||'')+'/play/'+id;
+  $('#modalTitle').textContent=title?('🎮 '+title):'🎮 Your game!';
+  $('#modal').classList.remove('hidden');
+}
+$('#closeModal').onclick=()=>{$('#modal').classList.add('hidden');$('#frame').src='about:blank';};
 $('#fsBtn').onclick=()=>{const f=$('#frame');(f.requestFullscreen||f.webkitRequestFullscreen||(()=>{})).call(f);};
 
 // ---- My Games gallery ----
@@ -254,9 +262,6 @@ async function openGames(){
     d.querySelector('.edit').onclick=()=>keepBuilding(g.id,g.title);
     grid.appendChild(d);
   });
-}
-async function playGame(id,title){
-  try{const g=await api('/api/game/'+id+'?kid='+encodeURIComponent(kid.id));runGame(g.html,g.title||title);}catch{addBuddy('Could not load that game.');}
 }
 function keepBuilding(id,title){
   currentGameId=id;$('#games').classList.add('hidden');
@@ -280,8 +285,8 @@ async function send(){
       refresh();
     }else if(r.error){addBuddy('Oops, something went wrong. Try again? ('+r.error+')');}
     else{
-      addBuddy(r.reply);
-      if(r.gameId){currentGameId=r.gameId;if(r.gameTitle){const n=document.createElement('div');n.className='msg buddy';n.style.background='#dcfce7';n.textContent=`✅ Saved "${r.gameTitle}" to 🎮 My Games!`;$('#log').appendChild(n);$('#log').scrollTop=$('#log').scrollHeight;}}
+      addBuddy(r.reply,{gameId:r.gameId,title:r.gameTitle});
+      if(r.gameId)currentGameId=r.gameId;
     }
   }catch(e){typing.remove();addBuddy('Hmm, I could not reach the server. Try again?');}
   $('#send').disabled=false;$('#text').focus();refresh();
@@ -301,6 +306,7 @@ function party(){
 }
 const sheet=document.createElement('style');sheet.textContent='@keyframes fall{to{transform:translateY(105vh) rotate(540deg);opacity:0}}';document.head.appendChild(sheet);
 
+loadMeta();
 loadKids();
 </script>
 </body>

@@ -13,6 +13,11 @@ export const config = {
   judgeModel: process.env.JUDGE_MODEL || 'claude-haiku-4-5-20251001',
   gitSha: process.env.GIT_SHA || 'dev',
 
+  // Separate origin that serves games full-page (/play/:id). Games are framed
+  // from HERE with allow-same-origin so their localStorage works, while staying
+  // a different origin from the app (kid HTML can't read the admin password).
+  playOrigin: process.env.PLAY_ORIGIN || '',
+
   // Per-kid defaults (each kid's row can override these in the DB).
   defaults: {
     earn_threshold_min: num(process.env.DEFAULT_THRESHOLD_MIN, 30),

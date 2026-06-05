@@ -189,6 +189,18 @@ app.get('/api/game/:id', (c) => {
   return c.json({ id: g.id, title: g.title, html: g.html, updated_at: g.updated_at });
 });
 
+// Tells the kid UI which origin to frame games from (the isolated play domain).
+app.get('/api/meta', (c) => c.json({ playOrigin: config.playOrigin }));
+
+// Serves a game as a full HTML page. The kid UI frames this from the SEPARATE
+// play origin (config.playOrigin) with allow-same-origin, so the game's
+// localStorage works but it can't touch the app origin's storage/admin password.
+app.get('/play/:id', (c) => {
+  const g = store.getGame(c.req.param('id'));
+  if (!g) return c.text('Game not found', 404);
+  return c.html(g.html);
+});
+
 // ---------------- parent / admin API ----------------
 const adminOk = (c) => config.adminPass && c.req.header('x-admin-pass') === config.adminPass;
 const admin = new Hono();
@@ -249,6 +261,16 @@ admin.post('/api/unlock', async (c) => {
   if (!b.kidId || !store.getKid(b.kidId)) return c.json({ error: 'unknown kid' }, 400);
   const st = forceUnlock(b.kidId, Number(b.minutes) || 0);
   return c.json({ ok: true, status: st });
+});
+
+admin.post('/api/game/import', async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  if (!b.kidId || !store.getKid(b.kidId)) return c.json({ error: 'unknown kid' }, 400);
+  if (!b.html || !b.title) return c.json({ error: 'title and html required' }, 400);
+  const t = Date.now();
+  const id = randomUUID();
+  store.insertGame({ id, kid_id: b.kidId, title: String(b.title).slice(0, 80), html: String(b.html), created_at: t, updated_at: t });
+  return c.json({ ok: true, id });
 });
 
 admin.post('/api/kid/delete', async (c) => {
