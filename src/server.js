@@ -196,13 +196,17 @@ admin.get('/api/snapshot/:id/image', (c) => {
   return new Response(fs.readFileSync(p), { headers: { 'content-type': 'image/png' } });
 });
 
+// Serve the dashboard HTML unauthenticated (it's just the login UI); the
+// /admin/api/* routes below stay behind the auth middleware. These GETs are
+// registered BEFORE the sub-app mount so they aren't shadowed by its auth.
+app.get('/admin', serveStatic({ path: './public/admin.html' }));
+app.get('/admin/', serveStatic({ path: './public/admin.html' }));
+
 app.route('/admin', admin);
 
 // ---------------- static (kid chat + parent dashboard) ----------------
 const root = './public';
 app.get('/', serveStatic({ path: './public/index.html' }));
-app.get('/admin', serveStatic({ path: './public/admin.html' }));
-app.get('/admin/', serveStatic({ path: './public/admin.html' }));
 app.use('/*', serveStatic({ root }));
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {
