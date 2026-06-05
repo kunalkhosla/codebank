@@ -1,0 +1,17 @@
+{
+  "name": "codebank",
+  "version": "0.1.0",
+  "description": "Kids earn AI chat time by making AI-verified coding progress in code.org/Scratch.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "better-sqlite3": "^11.7.0",
+    "hono": "^4.6.14"
+  }
+}

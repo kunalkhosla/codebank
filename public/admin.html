@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CodeBank — Parent Dashboard</title>
+<style>
+  :root{--ink:#1e293b;--mut:#64748b;--line:#e2e8f0;--brand:#7c3aed;--good:#059669;--warn:#b45309}
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;margin:0;background:#f1f5f9;color:var(--ink)}
+  header{background:var(--brand);color:#fff;padding:14px 22px;display:flex;align-items:center;gap:12px}
+  header h1{font-size:19px;margin:0}
+  header .sha{margin-left:auto;font-size:12px;opacity:.7}
+  .wrap{max-width:1000px;margin:0 auto;padding:20px}
+  .login{max-width:360px;margin:80px auto;background:#fff;padding:24px;border-radius:14px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  .login input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font-size:16px;margin:10px 0}
+  button{background:var(--brand);color:#fff;border:none;border-radius:10px;padding:10px 16px;font-size:15px;cursor:pointer}
+  button.ghost{background:#fff;color:var(--brand);border:1px solid var(--brand)}
+  button.sm{padding:6px 12px;font-size:13px}
+  .card{background:#fff;border-radius:14px;padding:18px;margin-bottom:18px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+  .kidhead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .kidhead .av{font-size:34px}
+  .kidhead .nm{font-size:20px;font-weight:600}
+  .status{margin-left:auto;font-weight:600}
+  .status.unlocked{color:var(--good)}.status.locked{color:var(--warn)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .knob label{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
+  .knob input{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .bar{height:14px;background:var(--line);border-radius:99px;overflow:hidden;margin:8px 0}
+  .bar>div{height:100%;background:linear-gradient(90deg,var(--good),#fbbf24)}
+  h3{font-size:14px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px}
+  .snaps{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
+  .snap{flex:0 0 auto;width:150px;border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:12px}
+  .snap img{width:150px;height:96px;object-fit:cover;background:#f8fafc;display:block}
+  .snap .meta{padding:6px}
+  .snap .sc{font-weight:700}.snap .sc.ok{color:var(--good)}.snap .sc.no{color:var(--warn)}
+  .snap .rs{color:var(--mut);line-height:1.25;margin-top:2px}
+  .tx{font-size:13px;border-left:3px solid var(--line);padding:4px 10px;margin:4px 0;color:var(--ink)}
+  .tx.user{border-color:#fbbf24}.tx.assistant{border-color:var(--brand)}
+  .muted{color:var(--mut);font-size:13px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;opacity:0;transition:opacity .2s}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header><h1>🏦 CodeBank — Parent Dashboard</h1><span class="sha" id="sha"></span></header>
+
+<div id="loginView" class="login">
+  <h2>Sign in</h2>
+  <p class="muted">Enter the admin password (ADMIN_PASS).</p>
+  <input id="pass" type="password" placeholder="Admin password" />
+  <button id="loginBtn">Sign in</button>
+  <p id="loginErr" style="color:#dc2626"></p>
+</div>
+
+<div id="app" class="wrap" style="display:none">
+  <div class="row" style="margin-bottom:14px">
+    <button class="ghost sm" id="refresh">↻ Refresh</button>
+    <button class="ghost sm" id="addKid">+ Add child</button>
+    <button class="ghost sm" id="logout" style="margin-left:auto">Sign out</button>
+  </div>
+  <div id="kids"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $=(s)=>document.querySelector(s);
+let PASS=localStorage.getItem('cb_admin')||'';
+function H(){return{'content-type':'application/json','x-admin-pass':PASS};}
+function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800);}
+function fmt(sec){sec=Math.max(0,Math.round(sec));const m=Math.floor(sec/60);return m+'m';}
+
+async function load(){
+  const r=await fetch('/admin/api/state',{headers:H()});
+  if(r.status===401){show('login');$('#loginErr').textContent='Wrong password.';return;}
+  if(r.status===503){show('login');$('#loginErr').textContent='Server has no ADMIN_PASS set.';return;}
+  const d=await r.json();show('app');render(d);
+}
+function show(v){$('#loginView').style.display=v==='login'?'block':'none';$('#app').style.display=v==='app'?'block':'none';}
+
+function render(d){
+  $('#sha').textContent='chat: '+d.models.chat+' · judge: '+d.models.judge;
+  const wrap=$('#kids');wrap.innerHTML='';
+  d.kids.forEach(k=>wrap.appendChild(kidCard(k)));
+}
+
+function kidCard(k){
+  const c=document.createElement('div');c.className='card';
+  const st=k.status, cfg=k.config;
+  const pct=st.unlocked?100:Math.min(100,Math.round(st.earnedSec/st.thresholdSec*100));
+  const statusTxt=st.unlocked?('🔓 Unlocked · '+fmt(st.windowSecLeft)+' left'):(st.canOpen?'🔓 Ready to open':'🔒 Locked');
+  c.innerHTML=`
+    <div class="kidhead">
+      <span class="av">${k.avatar||'🦊'}</span>
+      <span class="nm">${k.name}${k.birth_year?` <span class="muted">(age ~${new Date().getFullYear()-k.birth_year})</span>`:''}</span>
+      <span class="status ${st.unlocked?'unlocked':'locked'}">${statusTxt}</span>
+    </div>
+    <div class="bar"><div style="width:${pct}%"></div></div>
+    <div class="muted">Earned ${fmt(st.earnedSec)} / ${cfg.earn_threshold_min}m to unlock · Used today ${fmt(st.spentSec)} / ${cfg.daily_cap_min}m</div>
+
+    <h3>Settings</h3>
+    <div class="grid">
+      ${knob('Earn to unlock (min)','earn_threshold_min',cfg.earn_threshold_min)}
+      ${knob('Reward window (min)','reward_window_min',cfg.reward_window_min)}
+      ${knob('Daily AI cap (min)','daily_cap_min',cfg.daily_cap_min)}
+      ${knob('Snapshot every (min)','snapshot_interval_min',cfg.snapshot_interval_min)}
+      ${knob('Min progress score','min_progress_score',cfg.min_progress_score,'0.01')}
+    </div>
+    <div class="row">
+      <button class="sm" data-save="${k.id}">Save settings</button>
+      <button class="ghost sm" data-grant="${k.id}">+15 free min</button>
+    </div>
+
+    <h3>Coding receipts (what the AI judged)</h3>
+    <div class="snaps">${k.snapshots.length?k.snapshots.map(s=>snap(s)).join(''):'<span class="muted">No snapshots yet. They appear once the browser extension is running on code.org/Scratch.</span>'}</div>
+
+    <h3>Recent chat</h3>
+    ${k.transcript.length?k.transcript.map(t=>`<div class="tx ${t.role}"><b>${t.role==='user'?k.name:'Buddy'}:</b> ${esc(t.content).slice(0,400)}</div>`).join(''):'<span class="muted">No chats yet.</span>'}
+  `;
+  c.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>saveCfg(k.id,c));
+  c.querySelectorAll('[data-grant]').forEach(b=>b.onclick=()=>grant(k.id));
+  return c;
+}
+function knob(label,name,val,step){return `<div class="knob"><label>${label}</label><input data-k="${name}" type="number" step="${step||'1'}" value="${val}"></div>`;}
+function snap(s){
+  const ok=s.accrued_sec>0;
+  return `<div class="snap">${s.has_image?`<img src="/admin/api/snapshot/${s.id}/image" loading="lazy">`:'<div style="height:96px;display:flex;align-items:center;justify-content:center;color:#cbd5e1">no image</div>'}
+    <div class="meta"><span class="sc ${ok?'ok':'no'}">${ok?'+'+Math.round(s.accrued_sec/60)+'m':'0m'}</span> · score ${s.score==null?'–':s.score.toFixed(2)}
+    <div class="rs">${esc(s.reason||'')}</div></div></div>`;
+}
+function esc(t){return (t||'').replace(/[<>&]/g,x=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[x]));}
+
+async function saveCfg(kidId,card){
+  const body={kidId};card.querySelectorAll('[data-k]').forEach(i=>body[i.dataset.k]=Number(i.value));
+  const r=await fetch('/admin/api/config',{method:'POST',headers:H(),body:JSON.stringify(body)});
+  toast(r.ok?'Saved ✓':'Save failed');
+}
+async function grant(kidId){
+  await fetch('/admin/api/grant',{method:'POST',headers:H(),body:JSON.stringify({kidId,minutes:15})});
+  toast('+15 min granted');load();
+}
+$('#addKid').onclick=async()=>{
+  const name=prompt('Child name:');if(!name)return;
+  const by=prompt('Birth year (optional, helps tune the AI):');
+  const av=prompt('Pick an emoji avatar:','🦊')||'🦊';
+  await fetch('/admin/api/kid',{method:'POST',headers:H(),body:JSON.stringify({name,birthYear:by?Number(by):null,avatar:av})});
+  toast('Added');load();
+};
+$('#refresh').onclick=load;
+$('#logout').onclick=()=>{localStorage.removeItem('cb_admin');PASS='';show('login');};
+$('#loginBtn').onclick=()=>{PASS=$('#pass').value;localStorage.setItem('cb_admin',PASS);load();};
+$('#pass').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginBtn').click();});
+
+if(PASS)load();else show('login');
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "CodeBank Sensor",
+  "version": "0.1.0",
+  "description": "Reports coding progress on code.org / Scratch to CodeBank so kids earn AI time. Sensor only — it cannot unlock anything.",
+  "permissions": ["tabs", "storage", "alarms", "scripting"],
+  "host_permissions": [
+    "https://studio.code.org/*",
+    "https://scratch.mit.edu/*",
+    "https://codebank.mirellolabs.com/*",
+    "http://localhost/*"
+  ],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["https://studio.code.org/*", "https://scratch.mit.edu/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "CodeBank Sensor" }
+}

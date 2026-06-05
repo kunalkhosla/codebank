@@ -1,0 +1,210 @@
+import { Hono } from 'hono';
+import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { config } from './config.js';
+import { store } from './db.js';
+import { status, openWindow, addEarned, grantEarned, kidConfig } from './gate.js';
+import { judgeProgress } from './judge.js';
+import { chat } from './chat.js';
+
+const SNAP_DIR = path.join(config.dataDir, 'snapshots');
+
+// ---- seed kids from env (no kid data in the repo) ----
+function seedKids() {
+  const existing = store.listKids();
+  let seed = [];
+  if (config.kidsSeed) {
+    try { seed = JSON.parse(config.kidsSeed); } catch { console.error('CODEBANK_KIDS is not valid JSON'); }
+  }
+  if (!seed.length && !existing.length) {
+    seed = [{ id: 'demo', name: 'Coder', avatar: '🦊' }]; // harmless default so the app is usable
+  }
+  for (const k of seed) {
+    const kid = { id: k.id || randomUUID(), name: k.name || 'Coder', birth_year: k.birthYear || k.birth_year || null, avatar: k.avatar || '🦊', created_at: Date.now() };
+    store.upsertKid(kid);
+    if (!store.getConfig(kid.id)) {
+      store.upsertConfig({ kid_id: kid.id, ...config.defaults, chat_model: null, persona: null });
+    }
+  }
+}
+seedKids();
+
+const app = new Hono();
+
+const pubKid = (k) => ({ id: k.id, name: k.name, avatar: k.avatar });
+
+// ---------------- health ----------------
+app.get('/healthz', (c) => c.json({ ok: true, sha: config.gitSha, kids: store.listKids().length }));
+
+// ---------------- kid-facing API ----------------
+app.get('/api/kids', (c) => c.json(store.listKids().map(pubKid)));
+
+app.get('/api/status', (c) => {
+  const kid = c.req.query('kid');
+  if (!kid || !store.getKid(kid)) return c.json({ error: 'unknown kid' }, 400);
+  return c.json(status(kid));
+});
+
+app.post('/api/session/start', async (c) => {
+  const { kidId, platform } = await c.req.json().catch(() => ({}));
+  if (!kidId || !store.getKid(kidId)) return c.json({ error: 'unknown kid' }, 400);
+  const id = randomUUID();
+  store.insertSession(id, kidId, platform || 'unknown', Date.now());
+  return c.json({ sessionId: id, snapshotIntervalMin: kidConfig(kidId).snapshot_interval_min });
+});
+
+app.post('/api/snapshot', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { sessionId, kidId, platform, imageBase64, mediaType, code } = body;
+  if (!kidId || !store.getKid(kidId)) return c.json({ error: 'unknown kid' }, 400);
+
+  let sid = sessionId;
+  if (!sid || !store.getSession(sid)) {
+    sid = randomUUID();
+    store.insertSession(sid, kidId, platform || 'unknown', Date.now());
+  }
+
+  const prevSnap = store.lastSnapshot(sid);
+  let prev = null, prevCode = null;
+  if (prevSnap) {
+    prevCode = prevSnap.extracted_code || null;
+    if (prevSnap.has_image) {
+      const p = path.join(SNAP_DIR, `${prevSnap.id}.png`);
+      if (fs.existsSync(p)) prev = { mediaType: 'image/png', base64: fs.readFileSync(p).toString('base64') };
+    }
+  }
+
+  const snapId = randomUUID();
+  let hasImage = 0;
+  if (imageBase64) {
+    fs.writeFileSync(path.join(SNAP_DIR, `${snapId}.png`), Buffer.from(imageBase64, 'base64'));
+    hasImage = 1;
+  }
+
+  const cfg = kidConfig(kidId);
+  let score = 0, reason = 'first snapshot — keep building!', suspectedIdle = false, accruedSec = 0;
+
+  if (prevSnap) {
+    try {
+      const j = await judgeProgress({
+        platform,
+        prev,
+        cur: imageBase64 ? { mediaType: mediaType || 'image/png', base64: imageBase64 } : null,
+        prevCode,
+        curCode: code || null,
+      });
+      score = j.progressScore; reason = j.reason; suspectedIdle = j.suspectedIdle;
+      if (score >= cfg.min_progress_score) accruedSec = cfg.snapshot_interval_min * 60;
+    } catch (e) {
+      reason = 'judge error: ' + String(e.message || e).slice(0, 120);
+    }
+  }
+
+  store.insertSnapshot({
+    id: snapId, session_id: sid, kid_id: kidId, created_at: Date.now(), platform: platform || 'unknown',
+    has_image: hasImage, extracted_code: code ? String(code).slice(0, 8000) : null,
+    score, reason, suspected_idle: suspectedIdle ? 1 : 0, accrued_sec: accruedSec,
+  });
+  store.touchSession(Date.now(), sid);
+  if (accruedSec > 0) addEarned(kidId, accruedSec);
+
+  return c.json({ sessionId: sid, score, reason, suspectedIdle, accruedSec, status: status(kidId) });
+});
+
+app.post('/api/chat', async (c) => {
+  const { kidId, message } = await c.req.json().catch(() => ({}));
+  if (!kidId || !store.getKid(kidId)) return c.json({ error: 'unknown kid' }, 400);
+  if (!message || !String(message).trim()) return c.json({ error: 'empty message' }, 400);
+
+  let st = status(kidId);
+  if (!st.unlocked) {
+    const r = openWindow(kidId);
+    if (!r.opened) {
+      return c.json({ locked: true, status: r.status, reason: r.reason });
+    }
+    st = r.status;
+  }
+
+  try {
+    const reply = await chat(kidId, String(message).slice(0, 4000));
+    return c.json({ locked: false, reply, status: status(kidId) });
+  } catch (e) {
+    return c.json({ error: 'chat failed: ' + String(e.message || e).slice(0, 200) }, 500);
+  }
+});
+
+// ---------------- parent / admin API ----------------
+const adminOk = (c) => config.adminPass && c.req.header('x-admin-pass') === config.adminPass;
+const admin = new Hono();
+admin.use('*', async (c, next) => {
+  if (!config.adminPass) return c.json({ error: 'ADMIN_PASS not configured on server' }, 503);
+  if (!adminOk(c)) return c.json({ error: 'unauthorized' }, 401);
+  await next();
+});
+
+admin.get('/api/state', (c) => {
+  const kids = store.listKids().map((k) => ({
+    ...pubKid(k), birth_year: k.birth_year,
+    config: kidConfig(k.id),
+    status: status(k.id),
+    snapshots: store.recentSnapshots(k.id, 15),
+    transcript: store.recentTx(k.id, 12).reverse(),
+  }));
+  return c.json({ kids, models: { chat: config.chatModel, judge: config.judgeModel } });
+});
+
+admin.post('/api/kid', async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  if (!b.name) return c.json({ error: 'name required' }, 400);
+  const id = b.id || randomUUID();
+  store.upsertKid({ id, name: b.name, birth_year: b.birthYear || null, avatar: b.avatar || '🦊', created_at: Date.now() });
+  if (!store.getConfig(id)) store.upsertConfig({ kid_id: id, ...config.defaults, chat_model: null, persona: null });
+  return c.json({ id });
+});
+
+admin.post('/api/config', async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  if (!b.kidId || !store.getKid(b.kidId)) return c.json({ error: 'unknown kid' }, 400);
+  const cur = kidConfig(b.kidId);
+  const merged = {
+    kid_id: b.kidId,
+    earn_threshold_min: b.earn_threshold_min ?? cur.earn_threshold_min,
+    reward_window_min: b.reward_window_min ?? cur.reward_window_min,
+    daily_cap_min: b.daily_cap_min ?? cur.daily_cap_min,
+    snapshot_interval_min: b.snapshot_interval_min ?? cur.snapshot_interval_min,
+    min_progress_score: b.min_progress_score ?? cur.min_progress_score,
+    chat_model: b.chat_model ?? cur.chat_model ?? null,
+    persona: b.persona ?? cur.persona ?? null,
+  };
+  store.upsertConfig(merged);
+  return c.json({ ok: true, config: merged });
+});
+
+admin.post('/api/grant', async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  if (!b.kidId || !store.getKid(b.kidId)) return c.json({ error: 'unknown kid' }, 400);
+  grantEarned(b.kidId, Number(b.minutes || 0) * 60);
+  return c.json({ ok: true, status: status(b.kidId) });
+});
+
+admin.get('/api/snapshot/:id/image', (c) => {
+  const p = path.join(SNAP_DIR, `${c.req.param('id')}.png`);
+  if (!fs.existsSync(p)) return c.notFound();
+  return new Response(fs.readFileSync(p), { headers: { 'content-type': 'image/png' } });
+});
+
+app.route('/admin', admin);
+
+// ---------------- static (kid chat + parent dashboard) ----------------
+const root = './public';
+app.get('/', serveStatic({ path: './public/index.html' }));
+app.get('/admin', serveStatic({ path: './public/admin.html' }));
+app.get('/admin/', serveStatic({ path: './public/admin.html' }));
+app.use('/*', serveStatic({ root }));
+
+serve({ fetch: app.fetch, port: config.port }, (info) => {
+  console.log(`CodeBank listening on :${info.port} (sha ${config.gitSha}, ${store.listKids().length} kids)`);
+});

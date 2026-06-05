@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body{font-family:system-ui,sans-serif;width:280px;margin:0;padding:14px;color:#1e293b}
+  h1{font-size:15px;margin:0 0 10px}
+  label{display:block;font-size:12px;color:#64748b;margin:8px 0 3px}
+  input{width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;box-sizing:border-box}
+  button{width:100%;margin-top:10px;padding:9px;border:none;border-radius:8px;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer}
+  button.ghost{background:#fff;color:#7c3aed;border:1px solid #7c3aed}
+  .status{margin-top:10px;font-size:12px;color:#475569;background:#f1f5f9;border-radius:8px;padding:8px;min-height:18px}
+  .ok{color:#059669}.no{color:#b45309}
+</style>
+</head>
+<body>
+  <h1>🏦 CodeBank Sensor</h1>
+  <label>Backend URL</label>
+  <input id="backend" placeholder="https://codebank.mirellolabs.com" />
+  <label>Kid ID (from parent dashboard)</label>
+  <input id="kidId" placeholder="k1" />
+  <button id="save">Save & start session</button>
+  <button id="snap" class="ghost">Snapshot now (test)</button>
+  <div class="status" id="status"></div>
+<script src="popup.js"></script>
+</body>
+</html>

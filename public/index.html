@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Builder Buddy 🤖</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --pink:#ff6ec7; --purple:#8b5cf6; --blue:#38bdf8; --green:#34d399;
+    --yellow:#fbbf24; --ink:#2d1b4e; --card:#ffffff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:'Fredoka',system-ui,'Segoe UI',sans-serif;
+    color:var(--ink);
+    background:linear-gradient(135deg,#a78bfa 0%,#60a5fa 45%,#f0abfc 100%);
+    background-size:200% 200%;
+    animation:bg 18s ease infinite;
+    display:flex;flex-direction:column;height:100dvh;overflow:hidden;
+  }
+  @keyframes bg{0%{background-position:0 0}50%{background-position:100% 100%}100%{background-position:0 0}}
+  .hidden{display:none!important}
+
+  /* ---- profile picker ---- */
+  #picker{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;padding:24px}
+  #picker h1{font-size:clamp(32px,6vw,56px);margin:0;color:#fff;text-shadow:0 4px 0 rgba(0,0,0,.12)}
+  #picker p{color:#fff;font-size:20px;margin:0 0 8px}
+  .kids{display:flex;flex-wrap:wrap;gap:18px;justify-content:center}
+  .kidbtn{background:var(--card);border:none;border-radius:28px;padding:22px 26px;min-width:140px;cursor:pointer;
+    box-shadow:0 8px 0 rgba(0,0,0,.15);transition:transform .12s;display:flex;flex-direction:column;align-items:center;gap:8px}
+  .kidbtn:hover{transform:translateY(-4px) scale(1.04)}
+  .kidbtn:active{transform:translateY(2px)}
+  .kidbtn .av{font-size:54px}
+  .kidbtn .nm{font-size:22px;font-weight:600}
+
+  /* ---- top bar ---- */
+  header{display:flex;align-items:center;gap:12px;padding:12px 16px}
+  .me{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.85);border-radius:999px;padding:6px 14px 6px 8px;box-shadow:0 4px 0 rgba(0,0,0,.12)}
+  .me .av{font-size:30px}
+  .me .nm{font-weight:600;font-size:18px}
+  .chip{margin-left:auto;display:flex;align-items:center;gap:8px;font-weight:600;font-size:18px;
+    background:rgba(255,255,255,.9);padding:8px 16px;border-radius:999px;box-shadow:0 4px 0 rgba(0,0,0,.12)}
+  .chip.locked{color:#b45309}
+  .chip.unlocked{color:#047857}
+  .switch{background:none;border:none;color:#fff;font-family:inherit;font-size:15px;cursor:pointer;text-decoration:underline;opacity:.9}
+
+  /* ---- progress bar ---- */
+  .progwrap{padding:0 16px 6px}
+  .bar{height:22px;background:rgba(255,255,255,.45);border-radius:999px;overflow:hidden;box-shadow:inset 0 2px 4px rgba(0,0,0,.15)}
+  .fill{height:100%;width:0;background:linear-gradient(90deg,var(--green),var(--yellow));border-radius:999px;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+  .barlabel{text-align:center;color:#fff;font-size:14px;margin-top:4px;text-shadow:0 1px 0 rgba(0,0,0,.15)}
+
+  /* ---- chat ---- */
+  main{flex:1;display:flex;flex-direction:column;min-height:0;padding:6px 12px 12px}
+  #log{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:10px 6px}
+  .msg{max-width:82%;padding:14px 18px;border-radius:22px;font-size:18px;line-height:1.35;white-space:pre-wrap;word-wrap:break-word;box-shadow:0 3px 0 rgba(0,0,0,.10)}
+  .msg.buddy{align-self:flex-start;background:#fff;border-bottom-left-radius:6px}
+  .msg.me{align-self:flex-end;background:#fde68a;border-bottom-right-radius:6px}
+  .msg .runbtn{display:inline-block;margin-top:10px;background:var(--green);color:#063;border:none;border-radius:14px;padding:10px 16px;font-family:inherit;font-size:17px;font-weight:600;cursor:pointer;box-shadow:0 4px 0 #059669}
+  .msg .runbtn:active{transform:translateY(2px);box-shadow:0 2px 0 #059669}
+  .typing{align-self:flex-start;background:#fff;border-radius:22px;padding:14px 18px;display:flex;gap:6px}
+  .typing span{width:10px;height:10px;background:#c4b5fd;border-radius:50%;animation:bounce 1s infinite}
+  .typing span:nth-child(2){animation-delay:.15s}.typing span:nth-child(3){animation-delay:.3s}
+  @keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.5}40%{transform:translateY(-8px);opacity:1}}
+
+  /* ---- locked overlay ---- */
+  #locked{position:absolute;inset:0;background:linear-gradient(135deg,#7c3aed,#2563eb);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;padding:28px;color:#fff;z-index:5}
+  #locked .big{font-size:80px;animation:wob 2s ease-in-out infinite}
+  @keyframes wob{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(6deg)}}
+  #locked h2{font-size:clamp(24px,5vw,34px);margin:0}
+  #locked p{font-size:20px;margin:0;max-width:420px;opacity:.95}
+  #locked .go{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:8px}
+  #locked a{background:#fff;color:#4c1d95;text-decoration:none;font-weight:600;font-size:19px;padding:14px 22px;border-radius:18px;box-shadow:0 6px 0 rgba(0,0,0,.2)}
+  #locked a:active{transform:translateY(3px);box-shadow:0 3px 0 rgba(0,0,0,.2)}
+
+  /* ---- input ---- */
+  .inputbar{display:flex;gap:10px;padding:8px 6px 2px}
+  #text{flex:1;border:none;border-radius:20px;padding:16px 18px;font-family:inherit;font-size:18px;box-shadow:0 4px 0 rgba(0,0,0,.12);outline:none}
+  #send{border:none;border-radius:20px;padding:0 24px;font-size:26px;background:var(--green);color:#fff;cursor:pointer;box-shadow:0 5px 0 #059669}
+  #send:active{transform:translateY(3px);box-shadow:0 2px 0 #059669}
+  #send:disabled{opacity:.5}
+
+  /* run-game modal */
+  #modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;flex-direction:column;z-index:20}
+  #modal .topm{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;color:#fff;font-size:20px;font-weight:600}
+  #modal iframe{flex:1;border:none;background:#fff;border-radius:18px 18px 0 0}
+  #modal button{background:#fff;border:none;border-radius:14px;padding:10px 18px;font-family:inherit;font-size:17px;font-weight:600;cursor:pointer}
+
+  /* confetti */
+  .conf{position:fixed;top:-10px;width:12px;height:12px;z-index:30;pointer-events:none;border-radius:3px}
+</style>
+</head>
+<body>
+  <!-- profile picker -->
+  <section id="picker">
+    <h1>🤖 Builder Buddy</h1>
+    <p>Who's coding today?</p>
+    <div class="kids" id="kids"></div>
+  </section>
+
+  <!-- app -->
+  <div id="app" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0;position:relative">
+    <header>
+      <div class="me"><span class="av" id="meAv">🦊</span><span class="nm" id="meNm">Coder</span></div>
+      <div class="chip" id="chip">…</div>
+      <button class="switch" id="switch">switch</button>
+    </header>
+    <div class="progwrap">
+      <div class="bar"><div class="fill" id="fill"></div></div>
+      <div class="barlabel" id="barlabel"></div>
+    </div>
+
+    <main>
+      <div id="log"></div>
+      <div class="inputbar">
+        <input id="text" placeholder="Ask Builder Buddy to help build a game…" autocomplete="off" />
+        <button id="send">▶</button>
+      </div>
+    </main>
+
+    <!-- locked overlay -->
+    <section id="locked" class="hidden">
+      <div class="big">🔒</div>
+      <h2 id="lockTitle">Keep building to unlock!</h2>
+      <p id="lockMsg"></p>
+      <div class="go">
+        <a href="https://studio.code.org/projects" target="_blank" rel="noopener">Open code.org →</a>
+        <a href="https://scratch.mit.edu/projects/editor/" target="_blank" rel="noopener">Open Scratch →</a>
+      </div>
+    </section>
+  </div>
+
+  <div id="modal" class="hidden">
+    <div class="topm"><span>🎮 Your game!</span><button id="closeModal">Close ✕</button></div>
+    <iframe id="frame" sandbox="allow-scripts allow-pointer-lock"></iframe>
+  </div>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+let kid=null, statusTimer=null, lastUnlocked=null;
+
+async function api(p,opts){const r=await fetch(p,opts);return r.json();}
+function fmt(sec){sec=Math.max(0,Math.round(sec));const m=Math.floor(sec/60),s=sec%60;return m+':'+String(s).padStart(2,'0');}
+
+// ---- profile picker ----
+async function loadKids(){
+  const kids=await api('/api/kids');
+  const wrap=$('#kids');wrap.innerHTML='';
+  kids.forEach(k=>{
+    const b=document.createElement('button');b.className='kidbtn';
+    b.innerHTML=`<span class="av">${k.avatar||'🦊'}</span><span class="nm">${k.name}</span>`;
+    b.onclick=()=>pick(k);wrap.appendChild(b);
+  });
+  const saved=localStorage.getItem('cb_kid');
+  if(saved){const k=kids.find(x=>x.id===saved);if(k)pick(k);}
+}
+function pick(k){
+  kid=k;localStorage.setItem('cb_kid',k.id);
+  $('#picker').classList.add('hidden');$('#app').classList.remove('hidden');
+  $('#meAv').textContent=k.avatar||'🦊';$('#meNm').textContent=k.name;
+  $('#log').innerHTML='';
+  addBuddy(`Hi ${k.name}! I'm Builder Buddy 🤖 Once you've been building in code.org or Scratch, we can make awesome games together. What do you want to build?`);
+  refresh();clearInterval(statusTimer);statusTimer=setInterval(refresh,15000);
+}
+$('#switch').onclick=()=>{clearInterval(statusTimer);localStorage.removeItem('cb_kid');location.reload();};
+
+// ---- status / progress ----
+async function refresh(){
+  if(!kid)return;
+  const st=await api('/api/status?kid='+encodeURIComponent(kid.id));
+  const chip=$('#chip'),fill=$('#fill'),label=$('#barlabel'),locked=$('#locked');
+  if(st.unlocked){
+    chip.className='chip unlocked';chip.textContent='🔓 '+fmt(st.windowSecLeft)+' left';
+    fill.style.width='100%';
+    label.textContent='Builder Buddy is unlocked! '+Math.round(st.dailyRemainingSec/60)+' min left today';
+    locked.classList.add('hidden');
+    if(lastUnlocked===false)party();
+    lastUnlocked=true;
+  }else{
+    chip.className='chip locked';
+    const pct=Math.min(100,Math.round(st.earnedSec/st.thresholdSec*100));
+    fill.style.width=pct+'%';
+    const needMin=Math.ceil(st.needSec/60);
+    if(st.canOpen){chip.textContent='🔓 Ready!';label.textContent='You earned enough — send a message to start!';locked.classList.add('hidden');}
+    else if(st.dailyRemainingSec<=0){chip.textContent='🌙 Done today';showLocked("That's all the Builder Buddy time for today!","Come back tomorrow and build something new 🌟");}
+    else{chip.textContent='🔒 '+needMin+' min to go';label.textContent='Keep building! '+pct+'% to unlock';}
+    lastUnlocked=false;
+  }
+}
+function showLocked(title,msg){$('#lockTitle').textContent=title;$('#lockMsg').textContent=msg;$('#locked').classList.remove('hidden');}
+
+// ---- chat ----
+function addBuddy(text){return addMsg('buddy',text);}
+function addMe(text){return addMsg('me',text);}
+function addMsg(who,text){
+  const log=$('#log');const d=document.createElement('div');d.className='msg '+who;
+  const game=extractHtml(text);
+  d.textContent=game?text.replace(/```html[\s\S]*?```/,'').trim()||"Here's your game! 🎮":text;
+  if(game){const btn=document.createElement('button');btn.className='runbtn';btn.textContent='▶ Run my game!';btn.onclick=()=>runGame(game);d.appendChild(document.createElement('br'));d.appendChild(btn);}
+  log.appendChild(d);log.scrollTop=log.scrollHeight;return d;
+}
+function extractHtml(t){const m=t.match(/```html\s*([\s\S]*?)```/i);return m?m[1].trim():null;}
+function runGame(html){const f=$('#frame');f.srcdoc=html;$('#modal').classList.remove('hidden');}
+$('#closeModal').onclick=()=>{$('#modal').classList.add('hidden');$('#frame').srcdoc='';};
+
+async function send(){
+  const t=$('#text').value.trim();if(!t||!kid)return;
+  $('#text').value='';addMe(t);$('#send').disabled=true;
+  const typing=document.createElement('div');typing.className='typing';typing.innerHTML='<span></span><span></span><span></span>';
+  $('#log').appendChild(typing);$('#log').scrollTop=$('#log').scrollHeight;
+  try{
+    const r=await api('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kidId:kid.id,message:t})});
+    typing.remove();
+    if(r.locked){
+      const need=Math.ceil((r.status?.needSec||0)/60);
+      if(r.status?.dailyRemainingSec<=0)addBuddy("We've used all our Builder Buddy time for today! 🌙 Come back tomorrow.");
+      else addBuddy(`Almost there! Build for about ${need} more minute${need===1?'':'s'} in code.org or Scratch, then I'll be ready. 💪`);
+      refresh();
+    }else if(r.error){addBuddy('Oops, something went wrong. Try again? ('+r.error+')');}
+    else{addBuddy(r.reply);}
+  }catch(e){typing.remove();addBuddy('Hmm, I could not reach the server. Try again?');}
+  $('#send').disabled=false;$('#text').focus();refresh();
+}
+$('#send').onclick=send;
+$('#text').addEventListener('keydown',e=>{if(e.key==='Enter')send();});
+
+// ---- confetti on unlock ----
+function party(){
+  const colors=['#ff6ec7','#8b5cf6','#38bdf8','#34d399','#fbbf24'];
+  for(let i=0;i<60;i++){
+    const c=document.createElement('div');c.className='conf';
+    c.style.left=Math.random()*100+'vw';c.style.background=colors[i%colors.length];
+    c.style.animation=`fall ${1+Math.random()*1.5}s linear ${Math.random()*0.5}s forwards`;
+    document.body.appendChild(c);setTimeout(()=>c.remove(),3000);
+  }
+}
+const sheet=document.createElement('style');sheet.textContent='@keyframes fall{to{transform:translateY(105vh) rotate(540deg);opacity:0}}';document.head.appendChild(sheet);
+
+loadKids();
+</script>
+</body>
+</html>
