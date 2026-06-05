@@ -7,8 +7,7 @@
   "host_permissions": [
     "https://studio.code.org/*",
     "https://scratch.mit.edu/*",
-    "https://codebank.mirellolabs.com/*",
-    "http://localhost/*"
+    "https://codebank.mirellolabs.com/*"
   ],
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [
@@ -18,5 +17,10 @@
       "run_at": "document_idle"
     }
   ],
-  "action": { "default_popup": "popup.html", "default_title": "CodeBank Sensor" }
+  "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "CodeBank Sensor",
+    "default_icon": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" }
+  }
 }

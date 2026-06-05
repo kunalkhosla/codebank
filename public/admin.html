@@ -99,6 +99,9 @@ function kidCard(k){
     </div>
     <div class="bar"><div style="width:${pct}%"></div></div>
     <div class="muted">Earned ${fmt(st.earnedSec)} / ${cfg.earn_threshold_min}m to unlock · Used today ${fmt(st.spentSec)} / ${cfg.daily_cap_min}m</div>
+    <div class="muted" style="margin-top:8px">Kid ID (for the browser extension): <code style="background:#f1f5f9;padding:2px 7px;border-radius:6px">${k.id}</code>
+      <button class="ghost sm" data-copyid="${k.id}">Copy ID</button>
+      <button class="ghost sm" data-copycfg="${k.id}">Copy extension settings</button></div>
 
     <h3>Settings</h3>
     <div class="grid">
@@ -128,6 +131,8 @@ function kidCard(k){
   c.querySelectorAll('[data-grant]').forEach(b=>b.onclick=()=>grant(k.id));
   c.querySelectorAll('[data-unlock]').forEach(b=>b.onclick=()=>unlock(k.id,k.name,cfg.reward_window_min));
   c.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delKid(k.id,k.name));
+  c.querySelectorAll('[data-copyid]').forEach(b=>b.onclick=()=>{navigator.clipboard.writeText(k.id);toast('Kid ID copied');});
+  c.querySelectorAll('[data-copycfg]').forEach(b=>b.onclick=()=>{navigator.clipboard.writeText('CodeBank Sensor settings\nBackend URL: '+location.origin+'\nKid ID: '+k.id);toast('Extension settings copied');});
   return c;
 }
 function knob(label,name,val,step){return `<div class="knob"><label>${label}</label><input data-k="${name}" type="number" step="${step||'1'}" value="${val}"></div>`;}
