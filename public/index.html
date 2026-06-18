@@ -292,7 +292,7 @@ async function send(){
     else{
       addBuddy(r.reply,{gameId:r.gameId,title:r.gameTitle});
       if(r.gameId)currentGameId=r.gameId;
-      if(r.truncated)addBuddy("Whoa, that game got really big and I ran out of room! 😅 Tap “Keep building” and I’ll finish it. 🛠️");
+      if(r.truncated&&r.gameId)addBuddy("Whoa, that game got really big and I ran out of room! 😅 Tap “Keep building” and I’ll finish it. 🛠️");
     }
   }catch(e){typing.remove();addBuddy('Hmm, I could not reach the server. Try again?');}
   $('#send').disabled=false;$('#text').focus();refresh();
