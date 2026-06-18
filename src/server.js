@@ -24,9 +24,10 @@ function extractHtml(text) {
   // Truncated reply: opening ```html fence but no closing fence — take the rest.
   m = s.match(/```html\s*([\s\S]*)$/i);
   if (m && /<[a-z!]/i.test(m[1])) return m[1].trim();
-  // No fence at all but the reply is essentially a raw HTML document.
-  m = s.match(/(<!DOCTYPE[\s\S]+|<html[\s\S]+)/i);
-  if (m) return m[1].trim();
+  // No fence at all, but the WHOLE reply is a raw HTML document. Anchored at the
+  // start so ordinary prose that merely mentions "<html>" never matches.
+  const trimmed = s.trim();
+  if (/^<!DOCTYPE\s+html/i.test(trimmed) || /^<html[\s>]/i.test(trimmed)) return trimmed;
   return null;
 }
 function deriveTitle(html, fallbackMsg) {

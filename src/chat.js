@@ -47,13 +47,16 @@ export async function chat(kidId, userText, currentGameHtml = null) {
 
   store.insertTx(id(), kidId, now(), 'user', userText);
 
-  // Full single-file games run large; 4096 truncated every real game mid-file,
-  // which left the kid with an unrunnable wall of source instead of a saved game.
+  // NOTE: stays at 4096 deliberately. A bigger ceiling needs STREAMING first —
+  // a buffered (non-streamed) reply that takes >~100s to generate trips
+  // Cloudflare's origin timeout (524). Until streaming lands, big games are
+  // saved partial (extractHtml tolerates the cut) and finished via "Keep
+  // building"; `truncated` drives the kid-facing hint.
   const { text, stopReason } = await messages({
     model,
     system: personaFor(kid, cfg),
     msgs,
-    max_tokens: 16000,
+    max_tokens: 4096,
   });
 
   store.insertTx(id(), kidId, now(), 'assistant', text);
