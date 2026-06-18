@@ -23,7 +23,7 @@ export async function messages({ model, system, msgs, max_tokens = 2048, tempera
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
     .join('');
-  return { text, usage: data.usage };
+  return { text, usage: data.usage, stopReason: data.stop_reason };
 }
 
 export const imageBlock = (mediaType, base64) => ({

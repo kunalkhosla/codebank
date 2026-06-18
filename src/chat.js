@@ -47,13 +47,15 @@ export async function chat(kidId, userText, currentGameHtml = null) {
 
   store.insertTx(id(), kidId, now(), 'user', userText);
 
-  const { text } = await messages({
+  // Full single-file games run large; 4096 truncated every real game mid-file,
+  // which left the kid with an unrunnable wall of source instead of a saved game.
+  const { text, stopReason } = await messages({
     model,
     system: personaFor(kid, cfg),
     msgs,
-    max_tokens: 4096,
+    max_tokens: 16000,
   });
 
   store.insertTx(id(), kidId, now(), 'assistant', text);
-  return text;
+  return { text, truncated: stopReason === 'max_tokens' };
 }
