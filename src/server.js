@@ -13,9 +13,22 @@ import { chat } from './chat.js';
 const SNAP_DIR = path.join(config.dataDir, 'snapshots');
 
 // Pull the runnable game out of a Builder Buddy reply + give it a friendly title.
+// Tolerant of a missing closing fence: if a reply gets truncated mid-game we
+// still want to save what we have (the kid can "Keep building" to finish it)
+// rather than dumping a wall of source into the chat.
 function extractHtml(text) {
-  const m = (text || '').match(/```html\s*([\s\S]*?)```/i);
-  return m ? m[1].trim() : null;
+  const s = text || '';
+  // Normal case: a complete ```html … ``` block.
+  let m = s.match(/```html\s*([\s\S]*?)```/i);
+  if (m) return m[1].trim();
+  // Truncated reply: opening ```html fence but no closing fence — take the rest.
+  m = s.match(/```html\s*([\s\S]*)$/i);
+  if (m && /<[a-z!]/i.test(m[1])) return m[1].trim();
+  // No fence at all, but the WHOLE reply is a raw HTML document. Anchored at the
+  // start so ordinary prose that merely mentions "<html>" never matches.
+  const trimmed = s.trim();
+  if (/^<!DOCTYPE\s+html/i.test(trimmed) || /^<html[\s>]/i.test(trimmed)) return trimmed;
+  return null;
 }
 function deriveTitle(html, fallbackMsg) {
   const generic = /^(document|game|untitled|index|html)$/i;
@@ -153,7 +166,7 @@ app.post('/api/chat', async (c) => {
   }
 
   try {
-    const reply = await chat(kidId, String(message).slice(0, 4000), currentGameHtml);
+    const { text: reply, truncated } = await chat(kidId, String(message).slice(0, 4000), currentGameHtml);
 
     // Auto-save any game in the reply to the kid's library.
     let savedGameId = null, savedTitle = null;
@@ -169,7 +182,7 @@ app.post('/api/chat', async (c) => {
       savedTitle = title;
     }
 
-    return c.json({ locked: false, reply, gameId: savedGameId, gameTitle: savedTitle, status: status(kidId) });
+    return c.json({ locked: false, reply, gameId: savedGameId, gameTitle: savedTitle, truncated, status: status(kidId) });
   } catch (e) {
     return c.json({ error: 'chat failed: ' + String(e.message || e).slice(0, 200) }, 500);
   }

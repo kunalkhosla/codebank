@@ -226,7 +226,12 @@ function addMe(text){return addMsg('me',text);}
 function addMsg(who,text,opts){
   opts=opts||{};
   const log=$('#log');const d=document.createElement('div');d.className='msg '+who;
-  const shown=(text||'').replace(/```html[\s\S]*?```/i,'').trim();
+  // Strip the game code from the chat bubble — both a complete ```html…``` block
+  // and a truncated one (opening fence, no close) so source never floods the chat.
+  let shown=(text||'').replace(/```html[\s\S]*?```/i,'').replace(/```html[\s\S]*$/i,'').replace(/```/g,'').trim();
+  // Belt-and-suspenders: if a game was saved but raw markup slipped through
+  // unfenced, don't show the wall of source — just point at the game.
+  if(opts.gameId&&/<(!doctype|html|head|body|script|style|canvas|div|svg)[\s>]/i.test(shown))shown='';
   d.textContent=shown||(opts.gameId?"Here's your game! 🎮":text);
   if(opts.gameId){const btn=document.createElement('button');btn.className='runbtn';btn.textContent='▶ Play '+(opts.title||'my game')+'!';btn.onclick=()=>playGame(opts.gameId,opts.title);d.appendChild(document.createElement('br'));d.appendChild(btn);}
   log.appendChild(d);log.scrollTop=log.scrollHeight;return d;
@@ -287,6 +292,7 @@ async function send(){
     else{
       addBuddy(r.reply,{gameId:r.gameId,title:r.gameTitle});
       if(r.gameId)currentGameId=r.gameId;
+      if(r.truncated&&r.gameId)addBuddy("Whoa, that game got really big and I ran out of room! 😅 Tap “Keep building” and I’ll finish it. 🛠️");
     }
   }catch(e){typing.remove();addBuddy('Hmm, I could not reach the server. Try again?');}
   $('#send').disabled=false;$('#text').focus();refresh();

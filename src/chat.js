@@ -47,7 +47,12 @@ export async function chat(kidId, userText, currentGameHtml = null) {
 
   store.insertTx(id(), kidId, now(), 'user', userText);
 
-  const { text } = await messages({
+  // NOTE: stays at 4096 deliberately. A bigger ceiling needs STREAMING first —
+  // a buffered (non-streamed) reply that takes >~100s to generate trips
+  // Cloudflare's origin timeout (524). Until streaming lands, big games are
+  // saved partial (extractHtml tolerates the cut) and finished via "Keep
+  // building"; `truncated` drives the kid-facing hint.
+  const { text, stopReason } = await messages({
     model,
     system: personaFor(kid, cfg),
     msgs,
@@ -55,5 +60,5 @@ export async function chat(kidId, userText, currentGameHtml = null) {
   });
 
   store.insertTx(id(), kidId, now(), 'assistant', text);
-  return text;
+  return { text, truncated: stopReason === 'max_tokens' };
 }
