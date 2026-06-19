@@ -1,6 +1,6 @@
 // Builder Buddy — the kid-safe game-building chat. Only reached AFTER the gate
 // (gate.js) confirms the kid has an open reward window.
-import { messages } from './anthropic.js';
+import { streamMessages } from './anthropic.js';
 import { store } from './db.js';
 import { config } from './config.js';
 import { kidConfig } from './gate.js';
@@ -28,7 +28,7 @@ You help them build games and fun programs. When you write a full game, return i
 const now = () => Date.now();
 const id = () => `${now().toString(36)}${Math.floor(performance.now()).toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
-export async function chat(kidId, userText, currentGameHtml = null) {
+export async function chat(kidId, userText, currentGameHtml = null, onDelta = null) {
   const kid = store.getKid(kidId);
   if (!kid) throw new Error('unknown kid');
   const cfg = kidConfig(kidId);
@@ -47,17 +47,16 @@ export async function chat(kidId, userText, currentGameHtml = null) {
 
   store.insertTx(id(), kidId, now(), 'user', userText);
 
-  // NOTE: stays at 4096 deliberately. A bigger ceiling needs STREAMING first —
-  // a buffered (non-streamed) reply that takes >~100s to generate trips
-  // Cloudflare's origin timeout (524). Until streaming lands, big games are
-  // saved partial (extractHtml tolerates the cut) and finished via "Keep
-  // building"; `truncated` drives the kid-facing hint.
-  const { text, stopReason } = await messages({
+  // Streamed: a complete single-file game runs ~11k tokens / 60-135s. We stream
+  // so (a) Cloudflare doesn't 524 (first byte in ~1s) and (b) the kid watches it
+  // build. 16000 fits a full game with headroom; if it ever still truncates, the
+  // partial is saved and `truncated` drives the "Keep building" hint.
+  const { text, stopReason } = await streamMessages({
     model,
     system: personaFor(kid, cfg),
     msgs,
-    max_tokens: 4096,
-  });
+    max_tokens: 16000,
+  }, onDelta);
 
   store.insertTx(id(), kidId, now(), 'assistant', text);
   return { text, truncated: stopReason === 'max_tokens' };

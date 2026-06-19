@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { randomUUID } from 'node:crypto';
@@ -165,27 +166,36 @@ app.post('/api/chat', async (c) => {
     if (g && g.kid_id === kidId) currentGameHtml = g.html;
   }
 
-  try {
-    const { text: reply, truncated } = await chat(kidId, String(message).slice(0, 4000), currentGameHtml);
+  // Stream the reply as SSE: `delta` events carry text as it's generated (keeps
+  // the Cloudflare connection alive for long game builds + lets the kid watch it
+  // build), then a final `done` event carries the saved game + status. Errors
+  // after the stream starts come back as an `error` event.
+  return streamSSE(c, async (stream) => {
+    try {
+      const { text: reply, truncated } = await chat(
+        kidId, String(message).slice(0, 4000), currentGameHtml,
+        (delta) => { stream.writeSSE({ event: 'delta', data: JSON.stringify(delta) }); },
+      );
 
-    // Auto-save any game in the reply to the kid's library.
-    let savedGameId = null, savedTitle = null;
-    const html = extractHtml(reply);
-    if (html) {
-      const t = Date.now();
-      const title = deriveTitle(html, message);
-      const target = gameId && store.getGame(gameId)?.kid_id === kidId
-        ? store.getGame(gameId)
-        : store.getGameByTitle(kidId, title);
-      if (target) { store.updateGame({ id: target.id, title, html, updated_at: t }); savedGameId = target.id; }
-      else { savedGameId = randomUUID(); store.insertGame({ id: savedGameId, kid_id: kidId, title, html, created_at: t, updated_at: t }); }
-      savedTitle = title;
+      // Auto-save any game in the reply to the kid's library.
+      let savedGameId = null, savedTitle = null;
+      const html = extractHtml(reply);
+      if (html) {
+        const t = Date.now();
+        const title = deriveTitle(html, message);
+        const target = gameId && store.getGame(gameId)?.kid_id === kidId
+          ? store.getGame(gameId)
+          : store.getGameByTitle(kidId, title);
+        if (target) { store.updateGame({ id: target.id, title, html, updated_at: t }); savedGameId = target.id; }
+        else { savedGameId = randomUUID(); store.insertGame({ id: savedGameId, kid_id: kidId, title, html, created_at: t, updated_at: t }); }
+        savedTitle = title;
+      }
+
+      await stream.writeSSE({ event: 'done', data: JSON.stringify({ gameId: savedGameId, gameTitle: savedTitle, truncated, status: status(kidId) }) });
+    } catch (e) {
+      await stream.writeSSE({ event: 'error', data: JSON.stringify({ error: 'chat failed: ' + String(e.message || e).slice(0, 200) }) });
     }
-
-    return c.json({ locked: false, reply, gameId: savedGameId, gameTitle: savedTitle, truncated, status: status(kidId) });
-  } catch (e) {
-    return c.json({ error: 'chat failed: ' + String(e.message || e).slice(0, 200) }, 500);
-  }
+  });
 });
 
 // ---- games library (kid-facing) ----

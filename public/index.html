@@ -221,14 +221,15 @@ async function refresh(){
 function showLocked(title,msg){$('#lockTitle').textContent=title;$('#lockMsg').textContent=msg;$('#locked').classList.remove('hidden');}
 
 // ---- chat ----
+// Strip game code from a chat bubble — complete ```html…``` block AND a truncated
+// one (opening fence, no close) — so source never floods the chat.
+function stripCode(text){return (text||'').replace(/```html[\s\S]*?```/i,'').replace(/```html[\s\S]*$/i,'').replace(/```/g,'').trim();}
 function addBuddy(text,opts){return addMsg('buddy',text,opts);}
 function addMe(text){return addMsg('me',text);}
 function addMsg(who,text,opts){
   opts=opts||{};
   const log=$('#log');const d=document.createElement('div');d.className='msg '+who;
-  // Strip the game code from the chat bubble — both a complete ```html…``` block
-  // and a truncated one (opening fence, no close) so source never floods the chat.
-  let shown=(text||'').replace(/```html[\s\S]*?```/i,'').replace(/```html[\s\S]*$/i,'').replace(/```/g,'').trim();
+  let shown=stripCode(text);
   // Belt-and-suspenders: if a game was saved but raw markup slipped through
   // unfenced, don't show the wall of source — just point at the game.
   if(opts.gameId&&/<(!doctype|html|head|body|script|style|canvas|div|svg)[\s>]/i.test(shown))shown='';
@@ -281,18 +282,55 @@ async function send(){
   const typing=document.createElement('div');typing.className='typing';typing.innerHTML='<span></span><span></span><span></span>';
   $('#log').appendChild(typing);$('#log').scrollTop=$('#log').scrollHeight;
   try{
-    const r=await api('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kidId:kid.id,message:t,gameId:currentGameId})});
+    const resp=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kidId:kid.id,message:t,gameId:currentGameId})});
+    // The gate (locked / bad request) answers with plain JSON; a granted chat streams SSE.
+    const ct=resp.headers.get('content-type')||'';
+    if(!resp.body||ct.includes('application/json')){
+      typing.remove();
+      const r=await resp.json().catch(()=>({error:'bad response'}));
+      if(r.locked){
+        const need=Math.ceil((r.status?.needSec||0)/60);
+        if(r.status?.dailyRemainingSec<=0)addBuddy("We've used all our Builder Buddy time for today! 🌙 Come back tomorrow.");
+        else addBuddy(`Almost there! Build for about ${need} more minute${need===1?'':'s'} in code.org or Scratch, then I'll be ready. 💪`);
+      }else addBuddy('Oops, something went wrong. Try again? ('+(r.error||'unknown')+')');
+      $('#send').disabled=false;$('#text').focus();refresh();return;
+    }
+    // SSE: build up the reply live, showing the prose with a "building" hint while code streams.
+    const reader=resp.body.getReader();const dec=new TextDecoder();
+    let sseBuf='',acc='',bubble=null,done=null,errored=null;
+    // Live progress so kids don't get impatient: a growing line count + a phase
+    // message tied to what's actually streaming in (layout → style → logic → done).
+    const buildStatus=(s)=>{
+      const code=(s.match(/```html([\s\S]*)$/i)||[])[1]||'';
+      if(!code)return '🛠️ Getting ready to build…';
+      const lines=code.split('\n').length;
+      let phase='🧱 Laying out the screen…';
+      if(/<\/html>/i.test(code))phase='🎁 Adding the final touches…';
+      else if(/<script/i.test(code))phase='🧩 Teaching it how to play…';
+      else if(/<style/i.test(code))phase='🎨 Making it colorful…';
+      return `🛠️ Building your game…\n${phase}\n✍️ ${lines} lines written so far!`;
+    };
+    const paint=()=>{const prose=stripCode(acc);
+      const inOpenBlock=/```html/i.test(acc)&&!/```[\s\S]*```/i.test(acc);
+      const status=inOpenBlock?buildStatus(acc):'';
+      bubble.textContent=[prose,status].filter(Boolean).join('\n\n')||'🛠️ Getting ready to build…';
+      $('#log').scrollTop=$('#log').scrollHeight;};
+    for(;;){const{done:d,value}=await reader.read();if(d)break;
+      sseBuf+=dec.decode(value,{stream:true});const frames=sseBuf.split('\n\n');sseBuf=frames.pop();
+      for(const f of frames){let ev='message',data='';
+        for(const line of f.split('\n')){if(line.startsWith('event:'))ev=line.slice(6).trim();else if(line.startsWith('data:'))data+=line.slice(5).replace(/^ /,'');}
+        if(!data)continue;
+        if(ev==='delta'){if(!bubble){typing.remove();bubble=addBuddy('');}acc+=JSON.parse(data);paint();}
+        else if(ev==='done')done=JSON.parse(data);
+        else if(ev==='error')errored=(JSON.parse(data).error||'unknown');}}
     typing.remove();
-    if(r.locked){
-      const need=Math.ceil((r.status?.needSec||0)/60);
-      if(r.status?.dailyRemainingSec<=0)addBuddy("We've used all our Builder Buddy time for today! 🌙 Come back tomorrow.");
-      else addBuddy(`Almost there! Build for about ${need} more minute${need===1?'':'s'} in code.org or Scratch, then I'll be ready. 💪`);
-      refresh();
-    }else if(r.error){addBuddy('Oops, something went wrong. Try again? ('+r.error+')');}
+    if(errored){if(bubble)bubble.remove();addBuddy('Oops, something went wrong. Try again? ('+errored+')');}
     else{
-      addBuddy(r.reply,{gameId:r.gameId,title:r.gameTitle});
-      if(r.gameId)currentGameId=r.gameId;
-      if(r.truncated&&r.gameId)addBuddy("Whoa, that game got really big and I ran out of room! 😅 Tap “Keep building” and I’ll finish it. 🛠️");
+      const opts=done?{gameId:done.gameId,title:done.gameTitle}:{};
+      if(bubble)bubble.remove();
+      addBuddy(acc,opts);
+      if(done?.gameId)currentGameId=done.gameId;
+      if(done?.truncated&&done?.gameId)addBuddy("Whoa, that game got really big and I ran out of room! 😅 Tap “Keep building” and I’ll finish it. 🛠️");
     }
   }catch(e){typing.remove();addBuddy('Hmm, I could not reach the server. Try again?');}
   $('#send').disabled=false;$('#text').focus();refresh();
