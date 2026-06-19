@@ -145,10 +145,15 @@ app.post('/api/snapshot', async (c) => {
   return c.json({ sessionId: sid, score, reason, suspectedIdle, accruedSec, status: status(kidId) });
 });
 
+// One in-flight generation per kid — a cheap throttle so an open reward window
+// can't be used to fire many concurrent 16k-token builds (cost guard).
+const inFlight = new Set();
+
 app.post('/api/chat', async (c) => {
   const { kidId, message, gameId } = await c.req.json().catch(() => ({}));
   if (!kidId || !store.getKid(kidId)) return c.json({ error: 'unknown kid' }, 400);
   if (!message || !String(message).trim()) return c.json({ error: 'empty message' }, 400);
+  if (inFlight.has(kidId)) return c.json({ error: 'Buddy is still building your last game — hang on a sec! 🛠️' }, 429);
 
   let st = status(kidId);
   if (!st.unlocked) {
@@ -170,6 +175,7 @@ app.post('/api/chat', async (c) => {
   // the Cloudflare connection alive for long game builds + lets the kid watch it
   // build), then a final `done` event carries the saved game + status. Errors
   // after the stream starts come back as an `error` event.
+  inFlight.add(kidId);
   return streamSSE(c, async (stream) => {
     try {
       const { text: reply, truncated } = await chat(
@@ -194,6 +200,8 @@ app.post('/api/chat', async (c) => {
       await stream.writeSSE({ event: 'done', data: JSON.stringify({ gameId: savedGameId, gameTitle: savedTitle, truncated, status: status(kidId) }) });
     } catch (e) {
       await stream.writeSSE({ event: 'error', data: JSON.stringify({ error: 'chat failed: ' + String(e.message || e).slice(0, 200) }) });
+    } finally {
+      inFlight.delete(kidId);
     }
   });
 });
